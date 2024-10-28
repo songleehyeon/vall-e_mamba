@@ -5,22 +5,40 @@ from collections import defaultdict
 import torch
 from tqdm import tqdm
 
+from deepspeed.__init__ import DeepSpeedConfig
+from deepspeed.accelerator import get_accelerator
+from deepspeed.runtime import zero
+
 from .config import cfg
 from .data import create_train_val_dataloader
 from .emb import qnt
 from .utils import setup_logging, to_device, trainer
 from .vall_e import get_model
 
+import wandb
+import random
+
+
 _logger = logging.getLogger(__name__)
 
+dist = None
+
+# Disable zero.Init context if it's currently enabled
+zero.partition_parameters.shutdown_init_context()
 
 def load_engines():
     model = get_model(cfg.model)
+    
+    global dist
+    from deepspeed import comm as dist
+    dist_backend = get_accelerator().communication_backend_name()
+    dist.init_distributed(dist_backend=dist_backend)
 
     engines = dict(
         model=trainer.Engine(
             model=model,
             config=cfg.ds_cfg,
+            config_class=DeepSpeedConfig(config=cfg.ds_cfg)
         ),
     )
 
@@ -28,13 +46,16 @@ def load_engines():
 
 
 def main():
+    # Initialize wandb
+    wandb.init(project="VALL-E_Mamba", config=cfg, resume="allow", name="Training_VALL-E_Mamba")
     setup_logging(cfg.log_dir)
 
     train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
 
     def train_feeder(engines, batch, name):
         model = engines["model"]
-
+        
+        
         if cfg.model.startswith("ar"):
             _ = model(
                 text_list=batch["text"],
@@ -57,6 +78,9 @@ def main():
         stats = {}
         stats |= {k: v.item() for k, v in losses.items()}
         stats |= engines.gather_attribute("scalar")
+        
+        # Log stats to wandb
+        wandb.log(stats)
 
         return loss, stats
 
@@ -108,9 +132,16 @@ def main():
         stats = {k: sum(v) / len(v) for k, v in stats.items()}
         stats["global_step"] = engines.global_step
         stats["name"] = name
+        
+        # Log eval stats to wandb
+        wandb.log(stats)
+        
         _logger.info(f"Eval: {stats}.")
 
         _logger.info(f"{json.dumps(stats)}.")
+        
+        # Save evaluation results to wandb
+        wandb.save(str(log_dir / "*.wav"))
 
     def eval_fn(engines):
         run_eval(engines, "subtrain", subtrain_dl)

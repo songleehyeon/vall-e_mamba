@@ -6,8 +6,8 @@ from pathlib import Path
 
 import torch
 from g2p_en import G2p
+import nltk
 from tqdm import tqdm
-
 
 @cache
 def _get_model():

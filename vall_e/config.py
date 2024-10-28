@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
+import os
 
 import diskcache
 
@@ -91,9 +92,10 @@ class Config(ConfigBase):
         if self.cache_dataloader:
             return diskcache.Cache(self.cache_dir).memoize
         return lambda: lambda x: x
-
+    
 
 cfg = Config.from_cli()
+
 
 if __name__ == "__main__":
     print(cfg)

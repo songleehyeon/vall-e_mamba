@@ -1,8 +1,7 @@
 import math
 from functools import partial
 from typing import Literal, overload
-from mamba_ssm import Mamba
-from mamba_ssm import Mamba2
+
 import torch
 import torch.nn.functional as F
 from einops import rearrange
@@ -90,48 +89,48 @@ class SinusodialEmbedding(nn.Module):
         return x
 
 
-# class Attention(nn.Module):
-#     def __init__(self, d_model, n_heads, casual):
-#         super().__init__()
-#         assert d_model % n_heads == 0
-#         dim_head = d_model // n_heads
-#         self.casual = casual
-#         self.n_heads = n_heads
-#         self.scale = dim_head**-0.5
-#         self.to_qkv = nn.Linear(d_model, d_model * 3, bias=False)
-#         self.to_out = nn.Linear(d_model, d_model)
+class Attention(nn.Module):
+    def __init__(self, d_model, n_heads, casual):
+        super().__init__()
+        assert d_model % n_heads == 0
+        dim_head = d_model // n_heads
+        self.casual = casual
+        self.n_heads = n_heads
+        self.scale = dim_head**-0.5
+        self.to_qkv = nn.Linear(d_model, d_model * 3, bias=False)
+        self.to_out = nn.Linear(d_model, d_model)
 
-#     def forward(self, x, m):
-#         """
-#         Args:
-#             x: (b t c)
-#             m: (b t c), 1 is data, 0 is padding
-#         Returns:
-#             x: (b t c)
-#         """
-#         h = self.n_heads
+    def forward(self, x, m):
+        """
+        Args:
+            x: (b t c)
+            m: (b t c), 1 is data, 0 is padding
+        Returns:
+            x: (b t c)
+        """
+        h = self.n_heads
 
-#         q, k, v = self.to_qkv(x).chunk(3, dim=-1)
-#         q, k, v = map(lambda t: rearrange(t, "b t (h d) -> b t h d", h=h), (q, k, v))
+        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = map(lambda t: rearrange(t, "b t (h d) -> b t h d", h=h), (q, k, v))
 
-#         e = einsum("b i h d, b j h d -> b i j h", q, k)
-#         e = e * self.scale
+        e = einsum("b i h d, b j h d -> b i j h", q, k)
+        e = e * self.scale
 
-#         kpm = m.unsqueeze(1) * m.unsqueeze(2)  # b i j 1
+        kpm = m.unsqueeze(1) * m.unsqueeze(2)  # b i j 1
 
-#         if self.casual:
-#             kpm = kpm.squeeze(-1).tril().unsqueeze(-1)  # b i j 1
+        if self.casual:
+            kpm = kpm.squeeze(-1).tril().unsqueeze(-1)  # b i j 1
 
-#         e = e.masked_fill(kpm == 0, -torch.finfo(e.dtype).max)
-#         a = e.softmax(dim=2)  # Normalize on j, i.e. key
+        e = e.masked_fill(kpm == 0, -torch.finfo(e.dtype).max)
+        a = e.softmax(dim=2)  # Normalize on j, i.e. key
 
-#         o = einsum("b i j h, b j h d -> b i h d", a, v)
-#         o = o.flatten(-2)
-#         o = self.to_out(o)  # b t c
+        o = einsum("b i j h, b j h d -> b i h d", a, v)
+        o = o.flatten(-2)
+        o = self.to_out(o)  # b t c
 
-#         o = o * m
+        o = o * m
 
-#         return o
+        return o
 
 
 class AdaLN(nn.Module):
@@ -190,23 +189,16 @@ class PrenormResidual(nn.Module):
             l: level to use, required only for AdaLN
         """
         nopts = {"l": l} if self.norm_type == "adaln" else {}
-        # bopts = {"m": m} if self.requires_mask else {}
-        # x = x + self.dropout(self.block(self.norm(x, **nopts) * m, **bopts))
-        m = m if self.requires_mask else 1
-        x = self.norm(x, **nopts) * m
-        x = x + self.dropout(self.block(x))
+        bopts = {"m": m} if self.requires_mask else {}
+        x = x + self.dropout(self.block(self.norm(x, **nopts) * m, **bopts))
         return x * m
 
 
 class Block(nn.Sequential):
     def __init__(self, d_model, n_heads, p_dropout, casual, norm_type, n_levels):
         super().__init__()
-        self.mamba = PrenormResidual(
-            Mamba(d_model=d_model, # Model dimension d_model
-                  d_state=16,  # SSM state expansion factor
-                  d_conv=4,    # Local convolution width
-                  expand=1,    # Block expansion factor
-            ).to("cuda"),
+        self.attn = PrenormResidual(
+            Attention(d_model, n_heads, casual),
             d_model=d_model,
             p_dropout=p_dropout,
             requires_mask=True,
@@ -235,9 +227,9 @@ class Block(nn.Sequential):
         """
         poor_in_vram = True
         if x.requires_grad and poor_in_vram:
-            x = checkpoint(self.mamba, x, m, l)
+            x = checkpoint(self.attn, x, m, l)
         else:
-            x = self.mamba(x, m, l)
+            x = self.attn(x, m, l)
         x = self.ffn(x, m, l)
         return x
 

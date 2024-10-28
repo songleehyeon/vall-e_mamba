@@ -83,6 +83,7 @@ def main():
     paths = [*args.folder.rglob(f"*{args.suffix}")]
     random.shuffle(paths)
 
+
     for path in tqdm(paths):
         out_path = _replace_file_extension(path, ".qnt.pt")
         if out_path.exists():
