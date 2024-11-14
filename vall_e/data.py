@@ -15,6 +15,7 @@ from tqdm import tqdm
 from .config import cfg
 from .sampler import Sampler
 
+
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 _logger = logging.getLogger(__name__)

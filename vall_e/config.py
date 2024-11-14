@@ -1,21 +1,27 @@
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-import os
-
+from omegaconf import OmegaConf
 import diskcache
 
-from .utils import Config as ConfigBase
+from vall_e.utils import Config as ConfigBase
+
+config_data = OmegaConf.load("config/your_data/ar.yml")
 
 
 @dataclass(frozen=True)
 class Config(ConfigBase):
     data_root: Path = Path("data")
-    data_dirs: list[Path] = field(default_factory=lambda: [])
+    data_dirs: list[Path] = field(default_factory=lambda: [Path(p) for p in config_data.data_dirs])
 
     @property
     def sample_rate(self):
         return 24_000
+    
+    @property
+    def log_dir(self):
+        model_type = "ar" if self.model.startswith("ar") else "nar"
+        return Path("checkpoints") / model_type
 
     p_additional_prompt: float = 0.8
     max_prompts: int = 3
@@ -81,6 +87,7 @@ class Config(ConfigBase):
             },
             "gradient_clipping": self.gradient_clipping,
             "fp16": self.fp16_cfg,
+            "single_process": True
         }
 
     @property

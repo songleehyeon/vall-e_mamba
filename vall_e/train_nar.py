@@ -9,7 +9,7 @@ from deepspeed.__init__ import DeepSpeedConfig
 from deepspeed.accelerator import get_accelerator
 from deepspeed.runtime import zero
 
-from .config import cfg
+from .config_nar import cfg
 from .data import create_train_val_dataloader
 from .emb import qnt
 from .utils import setup_logging, to_device, trainer
@@ -17,11 +17,10 @@ from .vall_e import get_model
 
 import wandb
 import random
+import os
 
-<<<<<<< HEAD
+os.environ['MASTER_PORT'] = '45821'
 
-=======
->>>>>>> 9a0a834... feat: train_nar added
 _logger = logging.getLogger(__name__)
 
 dist = None
@@ -50,7 +49,7 @@ def load_engines():
 
 def main():
     # Initialize wandb
-    wandb.init(project="VALL-E__Mamba", config=cfg, resume="allow", name="Training_VALL-E_Mamba")
+    wandb.init(project="VALL-E__Mamba_nar", config=cfg, resume="allow", name="Training_VALL-E_Mamba_nar")
     setup_logging(cfg.log_dir)
 
     train_dl, subtrain_dl, val_dl = create_train_val_dataloader()
